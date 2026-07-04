@@ -49,7 +49,7 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 
 | Layer | Technology |
 |---|---|
-| Frontend | React 18 (CDN, no build step), Tailwind CSS, Babel Standalone |
+| Frontend | React 18, Tailwind CSS, Babel Standalone |
 | OCR | Tesseract.js v5 (client-side) |
 | Backend | Node.js + Express |
 | Authentication | JWT (jsonwebtoken), bcrypt (bcryptjs), 6-digit email OTP |
