@@ -174,7 +174,7 @@ function AuthPage({ onLogin, notify }) {
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-ink text-white display text-2xl font-bold mb-3">M</div>
           <h1 className="text-3xl font-bold ink">MyTax Receipt Logger</h1>
-          <p className="text-slate-500 mt-1 text-sm">Keep every tax relief receipt safe for 7 years — as LHDN requires.</p>
+          <p className="text-slate-500 mt-1 text-sm">Keep every tax relief receipt safe for 7 years as LHDN requires.</p>
         </div>
 
         {stage === 'credentials' && (
@@ -211,7 +211,7 @@ function AuthPage({ onLogin, notify }) {
                 Forgot password?
               </button>
             )}
-            <p className="text-center text-xs text-slate-400 mt-4">Protected by two-factor authentication — a one-time code is emailed to you.</p>
+            <p className="text-center text-xs text-slate-400 mt-4">Protected by two-factor authentication - a one-time code is emailed to you.</p>
           </div>
         )}
 
@@ -420,7 +420,7 @@ function UploadPage({ token, notify, goTo }) {
           </label>
           <button onClick={runOcr} disabled={!file || ocrBusy}
             className="w-full mt-4 bg-ink text-white rounded-lg py-2.5 font-medium disabled:opacity-40">
-            {ocrBusy ? `Scanning… ${ocrProgress}%` : 'Scan with OCR (Tesseract.js)'}
+            {ocrBusy ? `Scanning… ${ocrProgress}%` : 'Scan'}
           </button>
           {ocrBusy && <div className="h-1.5 bg-slate-100 rounded-full mt-3 overflow-hidden">
             <div className="h-full bg-[#122B40] rounded-full transition-all" style={{ width: ocrProgress + '%' }}></div></div>}
@@ -693,7 +693,7 @@ function App() {
       <aside className="w-60 bg-ink text-white flex-col hidden md:flex">
         <div className="px-5 py-6 border-b border-white/10">
           <p className="display font-bold text-lg leading-tight">MyTax<br />Receipt Logger</p>
-          <p className="text-xs opacity-50 mt-1">Local prototype</p>
+          <p className="text-xs opacity-50 mt-1">Prototype</p>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {NAV.map((n) => (
