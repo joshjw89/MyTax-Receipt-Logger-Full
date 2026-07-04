@@ -1,0 +1,62 @@
+# CI/CD Pipeline - MyTax Receipt Logger (Full with Email OTP)
+# Trigger: every push to the main branch (and the manual "Run workflow" button)
+#
+# Job 1 (CI)  - verifies the build: dependencies install, server + frontend parse cleanly
+# Job 2 (CD)  - triggers a deploy on Render, ONLY if Job 1 passed
+#
+# This adds the CI/CD design from the Assignment 1 plan
+# Render substitutes Azure App Service as the host
+# runs the Node.js server
+
+name: CI-CD Build and Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  ci-build-check:
+    name: CI — Build verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Syntax-check the server code
+        run: |
+          node --check server.js
+          node --check db.js
+          node --check mailer.js
+          echo "Server-side JavaScript is valid"
+
+      - name: Compile-check the React (JSX) frontend with Babel
+        run: |
+          npm install --no-save @babel/core @babel/cli @babel/preset-react
+          npx babel public/app.js --presets @babel/preset-react -o compiled-check.js
+          node --check compiled-check.js
+          echo "Frontend JSX compiles cleanly — build check passed"
+
+  cd-deploy:
+    name: CD — Deploy to Render
+    needs: ci-build-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Render deploy
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK }}" ]; then
+            echo "RENDER_DEPLOY_HOOK secret is not set — skipping deploy trigger."
+            echo "Add it under Settings > Secrets and variables > Actions to enable auto-deploy."
+            exit 0
+          fi
+          echo "Triggering Render deployment..."
+          curl -fsSL -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          echo "Deploy triggered on Render."
