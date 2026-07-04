@@ -1,0 +1,9 @@
+node_modules/
+mytax.db
+mytax.db-journal
+server.log
+nohup.out
+storage/hot/*
+storage/cold/*
+compiled-check.js
+.env

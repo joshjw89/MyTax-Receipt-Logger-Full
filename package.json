@@ -1,0 +1,20 @@
+{
+  "name": "mytax-receipt-logger-fullstack",
+  "version": "2.0.0",
+  "description": "MyTax Receipt Logger - Full-Stack Prototype with Email OTP 2FA (Assignment 2)",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "sql.js": "^1.11.0",
+    "multer": "^1.4.5-lts.1",
+    "bcryptjs": "^2.4.3",
+    "jsonwebtoken": "^9.0.2",
+    "nodemailer": "^9.0.3"
+  }
+}
