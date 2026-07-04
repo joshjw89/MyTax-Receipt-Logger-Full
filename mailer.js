@@ -1,87 +1,111 @@
-// mailer.js — sends the 6-digit OTP code to the user's email via Nodemailer.
+// mailer.js - sends emails via Brevo HTTP API (port 443 / HTTPS)
+// Render's free tier blocks all outbound SMTP ports (25, 465, 587) since September 26 2025. 
+// Brevo sends via a REST API over HTTPS (port 443) which Render permits. 
+// No additional npm package needed — uses Node's built-in https.
+// Environment variables required (set in Render dashboard, never in code):
+//   BREVO_API_KEY 
+//   EMAIL_USER     
 //
-// Uses a Gmail account through an "App Password" (set as environment variables,
-// never hard-coded). If credentials are not configured, it falls back to printing
-// the code to the server console so the app still works for local development.
-const nodemailer = require('nodemailer');
+// Free tier: 300 emails/day
 
-const EMAIL_USER = process.env.EMAIL_USER; // your full Gmail address
-const EMAIL_PASS = process.env.EMAIL_PASS; // the 16-character Gmail App Password
+const https = require('https');
 
-const isConfigured = Boolean(EMAIL_USER && EMAIL_PASS);
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const EMAIL_USER    = process.env.EMAIL_USER;
 
-let transporter = null;
-if (isConfigured) {
-  transporter = nodemailer.createTransport({
-     host: 'smtp.gmail.com',
-     port: 587,
-     secure: false,
-     auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-   });
+const isConfigured = Boolean(BREVO_API_KEY && EMAIL_USER);
+
+// Send a JSON payload to the Brevo transactional email API
+function brevoSend(payload) {
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const req = https.request(
+      {
+        hostname: 'api.brevo.com',
+        path: '/v3/smtp/email',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body),
+          'api-key': BREVO_API_KEY,
+        },
+      },
+      (res) => {
+        let data = '';
+        res.on('data', (chunk) => { data += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve(JSON.parse(data || '{}'));
+          } else {
+            reject(new Error(`Brevo API error ${res.statusCode}: ${data}`));
+          }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.write(body);
+    req.end();
+  });
 }
 
+// ---------- OTP verification email ----------
 async function sendOtpEmail(toEmail, name, code) {
-  // No credentials configured → development fallback: log to console.
   if (!isConfigured) {
     console.log('============================================================');
     console.log('  EMAIL NOT CONFIGURED — DEVELOPMENT FALLBACK');
     console.log(`  OTP for ${toEmail}: ${code}`);
-    console.log('  (Set EMAIL_USER and EMAIL_PASS to send real emails)');
+    console.log('  (Set BREVO_API_KEY and EMAIL_USER to send real emails)');
     console.log('============================================================');
     return { delivered: false, fallback: true };
   }
 
-  const html = `
-  <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F4F7F9;border-radius:12px">
-    <h2 style="color:#122B40;margin:0 0 4px">MyTax Receipt Logger</h2>
-    <p style="color:#5A6B7A;margin:0 0 20px">Two-factor authentication</p>
-    <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;border:1px solid #e2e8f0">
-      <p style="color:#5A6B7A;margin:0 0 8px">Hi ${name}, your one-time verification code is:</p>
-      <p style="font-size:34px;letter-spacing:8px;font-weight:bold;color:#122B40;margin:8px 0">${code}</p>
-      <p style="color:#94a3b8;font-size:13px;margin:8px 0 0">This code expires in 5 minutes.</p>
-    </div>
-    <p style="color:#94a3b8;font-size:12px;margin:20px 0 0">If you didn't try to log in, you can safely ignore this email.</p>
-  </div>`;
-
-  await transporter.sendMail({
-    from: `"MyTax Receipt Logger" <${EMAIL_USER}>`,
-    to: toEmail,
+  await brevoSend({
+    sender: { name: 'MyTax Receipt Logger', email: EMAIL_USER },
+    to: [{ email: toEmail, name }],
     subject: `Your MyTax verification code: ${code}`,
-    text: `Hi ${name}, your MyTax Receipt Logger verification code is ${code}. It expires in 5 minutes.`,
-    html,
+    textContent: `Hi ${name}, your MyTax Receipt Logger verification code is ${code}. It expires in 5 minutes.`,
+    htmlContent: `
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F4F7F9;border-radius:12px">
+      <h2 style="color:#122B40;margin:0 0 4px">MyTax Receipt Logger</h2>
+      <p style="color:#5A6B7A;margin:0 0 20px">Two-factor authentication</p>
+      <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;border:1px solid #e2e8f0">
+        <p style="color:#5A6B7A;margin:0 0 8px">Hi ${name}, your one-time verification code is:</p>
+        <p style="font-size:34px;letter-spacing:8px;font-weight:bold;color:#122B40;margin:8px 0">${code}</p>
+        <p style="color:#94a3b8;font-size:13px;margin:8px 0 0">This code expires in 5 minutes.</p>
+      </div>
+      <p style="color:#94a3b8;font-size:12px;margin:20px 0 0">If you did not try to log in, you can safely ignore this email.</p>
+    </div>`,
   });
   return { delivered: true, fallback: false };
 }
 
+// ---------- Password reset email ----------
 async function sendPasswordResetEmail(toEmail, name, tempPass) {
-  // No credentials configured → development fallback: log to console.
   if (!isConfigured) {
     console.log('============================================================');
     console.log('  EMAIL NOT CONFIGURED — DEVELOPMENT FALLBACK');
     console.log(`  Temporary password for ${toEmail}: ${tempPass}`);
-    console.log('  (Set EMAIL_USER and EMAIL_PASS to send real emails)');
+    console.log('  (Set BREVO_API_KEY and EMAIL_USER to send real emails)');
     console.log('============================================================');
     return { delivered: false, fallback: true };
   }
 
-  const html = `
-  <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F4F7F9;border-radius:12px">
-    <h2 style="color:#122B40;margin:0 0 4px">MyTax Receipt Logger</h2>
-    <p style="color:#5A6B7A;margin:0 0 20px">Password reset</p>
-    <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;border:1px solid #e2e8f0">
-      <p style="color:#5A6B7A;margin:0 0 8px">Hi ${name}, your new temporary password is:</p>
-      <p style="font-size:24px;letter-spacing:3px;font-weight:bold;color:#122B40;margin:8px 0;font-family:Consolas,monospace">${tempPass}</p>
-      <p style="color:#94a3b8;font-size:13px;margin:8px 0 0">Use it to log in — you will still be asked for a verification code.</p>
-    </div>
-    <p style="color:#94a3b8;font-size:12px;margin:20px 0 0">If you didn't request a password reset, please log in and check your account.</p>
-  </div>`;
-
-  await transporter.sendMail({
-    from: `"MyTax Receipt Logger" <${EMAIL_USER}>`,
-    to: toEmail,
+  await brevoSend({
+    sender: { name: 'MyTax Receipt Logger', email: EMAIL_USER },
+    to: [{ email: toEmail, name }],
     subject: 'Your MyTax temporary password',
-    text: `Hi ${name}, your new temporary MyTax Receipt Logger password is: ${tempPass} — use it to log in. You will still be asked for an emailed verification code.`,
-    html,
+    textContent: `Hi ${name}, your new temporary MyTax Receipt Logger password is: ${tempPass} — use it to log in. You will still be asked for a verification code.`,
+    htmlContent: `
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F4F7F9;border-radius:12px">
+      <h2 style="color:#122B40;margin:0 0 4px">MyTax Receipt Logger</h2>
+      <p style="color:#5A6B7A;margin:0 0 20px">Password reset</p>
+      <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;border:1px solid #e2e8f0">
+        <p style="color:#5A6B7A;margin:0 0 8px">Hi ${name}, your new temporary password is:</p>
+        <p style="font-size:24px;letter-spacing:3px;font-weight:bold;color:#122B40;margin:8px 0;font-family:Consolas,monospace">${tempPass}</p>
+        <p style="color:#94a3b8;font-size:13px;margin:8px 0 0">Use it to log in — you will still be asked for a verification code.</p>
+      </div>
+      <p style="color:#94a3b8;font-size:12px;margin:20px 0 0">If you did not request a password reset, please log in and check your account.</p>
+    </div>`,
   });
   return { delivered: true, fallback: false };
 }
