@@ -1,4 +1,4 @@
-# MyTax Receipt Logger — Full-Stack Prototype
+# MyTax Receipt Logger — Full Prototype
 
 A web application that helps Malaysian individual taxpayers digitise, categorise, store and track tax relief receipts in compliance with LHDN's 7-year retention requirement under the Income Tax Act 1967.
 
