@@ -13,9 +13,11 @@ const isConfigured = Boolean(EMAIL_USER && EMAIL_PASS);
 let transporter = null;
 if (isConfigured) {
   transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
-  });
+     host: 'smtp.gmail.com',
+     port: 587,
+     secure: false,
+     auth: { user: EMAIL_USER, pass: EMAIL_PASS },
+   });
 }
 
 async function sendOtpEmail(toEmail, name, code) {
