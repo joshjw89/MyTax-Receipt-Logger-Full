@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MyTax Receipt Logger</title>
+  <!-- Tailwind CSS (matches Assignment 1 stack) -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- React 18 (matches Assignment 1 stack) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- Tesseract.js client-side OCR (matches Assignment 1 free-tier design) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; background: #F4F7F9; }
+    h1, h2, h3, .display { font-family: 'Space Grotesk', sans-serif; }
+    .ink { color: #122B40; }
+    .bg-ink { background-color: #122B40; }
+    .gold { color: #B8860B; }
+    @media print {
+      body * { visibility: hidden; }
+      #print-area, #print-area * { visibility: visible; }
+      #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!--
+    Load app.js manually and force Babel's "classic" JSX runtime. Newer Babel
+    Standalone versions default to the "automatic" runtime, which injects an ES
+    module import statement that plain <script> tags cannot execute (causing a
+    blank page). The classic runtime compiles JSX to React.createElement instead.
+  -->
+  <script>
+    fetch('app.js')
+      .then((r) => r.text())
+      .then((source) => {
+        const { code } = Babel.transform(source, { presets: [['react', { runtime: 'classic' }]] });
+        const script = document.createElement('script');
+        script.text = code;
+        document.body.appendChild(script);
+      })
+      .catch((err) => {
+        document.getElementById('root').innerHTML =
+          '<p style="padding:2rem;font-family:sans-serif;color:#b91c1c">Failed to load app.js: ' + err.message + '</p>';
+      });
+  </script>
+</body>
+</html>
