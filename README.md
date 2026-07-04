@@ -55,7 +55,7 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 | Authentication | JWT (jsonwebtoken), bcrypt (bcryptjs), 6-digit email OTP |
 | Database | SQLite via sql.js |
 | File uploads | Multer |
-| Email | Brevo HTTP API (port 443 - bypasses Render's SMTP port block) |
+| Email | Brevo HTTP API (port 443) |
 | Hosting | Render (free tier) |
 | CI/CD | GitHub Actions |
 
