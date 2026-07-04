@@ -34,8 +34,8 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 |---|---|
 | Azure App Service (Node.js) | Render web service |
 | Azure PostgreSQL Flexible Server | SQLite (`mytax.db`) via sql.js |
-| Azure Blob Storage — Hot tier | `storage/hot/` folder |
-| Azure Blob Storage — Cold tier | `storage/cold/` folder |
+| Azure Blob Storage - Hot tier | `storage/hot/` folder |
+| Azure Blob Storage - Cold tier | `storage/cold/` folder |
 | Azure Blob Lifecycle Management | Manual "Run lifecycle policy" button |
 | Azure AI Vision OCR | Tesseract.js (client-side, free) |
 | Speakeasy TOTP / SMS OTP (2FA) | Email OTP via Brevo HTTP API |
@@ -55,7 +55,7 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 | Authentication | JWT (jsonwebtoken), bcrypt (bcryptjs), 6-digit email OTP |
 | Database | SQLite via sql.js |
 | File uploads | Multer |
-| Email | Brevo HTTP API (port 443 — bypasses Render's SMTP port block) |
+| Email | Brevo HTTP API (port 443 - bypasses Render's SMTP port block) |
 | Hosting | Render (free tier) |
 | CI/CD | GitHub Actions |
 
@@ -65,8 +65,8 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 
 - **Data resets on Render redeploy** - SQLite lives on Render's ephemeral disk. A new deploy starts with an empty database. Acceptable for a prototype; in production this would be a managed database (Azure PostgreSQL).
 - **Render free tier sleeps** after ~15 minutes of inactivity. The first request after sleeping takes 30–50 seconds to wake. 
-- **Receipt files are not persisted across Render redeploys** — files in `storage/hot` and `storage/cold` are also on ephemeral disk.
-- **Emails may land in spam** — due to missing SPF/DKIM/DMARC DNS records on the sender domain. Expected for a prototype using a personal email address as the sender. In production, these records would be configured on the domain's DNS provider.
+- **Receipt files are not persisted across Render redeploys** - files in `storage/hot` and `storage/cold` are also on ephemeral disk.
+- **Emails may land in spam** - due to missing SPF/DKIM/DMARC DNS records on the sender domain. Expected for a prototype using a personal email address as the sender. In production, these records would be configured on the domain's DNS provider.
 
 ---
 
@@ -74,10 +74,10 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 
 The following features have been built locally and are pending deployment:
 
-- **Invite-only registration** — public self-registration is disabled; Super Administrators and User Administrators send invite links to specific email addresses (7-day expiry, single-use, cryptographically random token)
-- **Administrator roles** — three roles: Super Administrator (full access), User Administrator (user management only), User (normal access)
-- **Admin panel** — dedicated Administration tab for User Admins and Super Admins: view all users with role, subscription, status and created date; toggle Freemium/Premium subscription; disable/enable accounts; delete accounts and all associated receipts
-- **Role management** — Super Admins can promote or demote any user's role; last Super Administrator is protected from demotion or deletion
-- **Maintenance mode** — Super Admins can take the site offline instantly; all non-Super-Admin login attempts are blocked with a maintenance message; Super Admins continue to log in normally through the same URL
+- **Invite-only registration** - public self-registration is disabled; Super Administrators and User Administrators send invite links to specific email addresses (7-day expiry, single-use, cryptographically random token)
+- **Administrator roles** - three roles: Super Administrator (full access), User Administrator (user management only), User (normal access)
+- **Admin panel** - dedicated Administration tab for User Admins and Super Admins: view all users with role, subscription, status and created date; toggle Freemium/Premium subscription; disable/enable accounts; delete accounts and all associated receipts
+- **Role management** - Super Admins can promote or demote any user's role; last Super Administrator is protected from demotion or deletion
+- **Maintenance mode** - Super Admins can take the site offline instantly; all non-Super-Admin login attempts are blocked with a maintenance message; Super Admins continue to log in normally through the same URL
 
 
