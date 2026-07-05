@@ -1,7 +1,7 @@
 // server.js — MyTax Receipt Logger full-stack prototype with Email OTP 2FA
 // Node.js + Express (replaces Azure App Service)
 // Local folders storage/hot and storage/cold (replace Azure Blob Storage tiers)
-// Login/registration require a 6-digit OTP emailed to the user (Nodemailer + Gmail)
+// Login/registration require a 6-digit OTP emailed to the user (Brevo)
 
 const express = require('express');
 const path = require('path');
@@ -11,7 +11,7 @@ const multer = require('multer');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const initDb = require('./db');
-const { sendOtpEmail, sendPasswordResetEmail, isConfigured } = require('./mailer');
+const { sendOtpEmail, sendPasswordResetEmail, sendInviteEmail, isConfigured } = require('./mailer');
 
 // Render provides the port via an environment variable; fall back to 3000 locally.
 const PORT = process.env.PORT || 3000;
@@ -39,11 +39,11 @@ const upload = multer({
 
 // Full access token — issued only AFTER a successful OTP check
 function fullToken(user) {
-  return jwt.sign({ id: user.id, name: user.name, email: user.email, scope: 'full' }, JWT_SECRET, { expiresIn: '8h' });
+  return jwt.sign({ id: user.id, name: user.name, email: user.email, role: user.role || 'user', scope: 'full' }, JWT_SECRET, { expiresIn: '8h' });
 }
 // Pending token — issued after password check, only usable to verify an OTP
 function pendingToken(user) {
-  return jwt.sign({ id: user.id, name: user.name, email: user.email, scope: 'pending' }, JWT_SECRET, { expiresIn: '10m' });
+  return jwt.sign({ id: user.id, name: user.name, email: user.email, role: user.role || 'user', scope: 'pending' }, JWT_SECRET, { expiresIn: '10m' });
 }
 
 function authMiddleware(req, res, next) {
@@ -58,6 +58,16 @@ function authMiddleware(req, res, next) {
   } catch {
     return res.status(401).json({ error: 'Session expired — please log in again' });
   }
+}
+
+// Role guards — used on top of authMiddleware
+function requireAdmin(req, res, next) {
+  if (req.user.role === 'useradmin' || req.user.role === 'superadmin') return next();
+  return res.status(403).json({ error: 'Administrator access required' });
+}
+function requireSuperAdmin(req, res, next) {
+  if (req.user.role === 'superadmin') return next();
+  return res.status(403).json({ error: 'Super Administrator access required' });
 }
 
 const sixDigit = () => String(crypto.randomInt(0, 1000000)).padStart(6, '0');
@@ -97,31 +107,83 @@ initDb().then((db) => {
     return result;
   }
 
-  // ---------- Registration: create account, then require OTP ----------
+  // ---------- Settings helpers (maintenance mode) ----------
+  const getSetting = (key, fallback) => {
+    const row = db.get('SELECT value FROM settings WHERE key = ?', [key]);
+    return row ? row.value : fallback;
+  };
+  const setSetting = (key, value) => {
+    db.run('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?', [key, value, value]);
+  };
+  const maintenanceOn = () => getSetting('maintenance_mode', 'off') === 'on';
+  const userCount = () => db.get('SELECT COUNT(*) AS c FROM users').c;
+
+  // ---------- Public: first-run + maintenance status (login screen reads this) ----------
+  app.get('/api/setup-status', (req, res) => {
+    res.json({ firstRun: userCount() === 0, maintenance: maintenanceOn() });
+  });
+
+  // ---------- Public: validate an invite token (registration form reads this) ----------
+  app.get('/api/invite/:token', (req, res) => {
+    const inv = db.get('SELECT * FROM invites WHERE token = ?', [req.params.token]);
+    if (!inv || inv.used) return res.status(404).json({ error: 'This invitation is invalid or has already been used' });
+    if (nowStamp() > inv.expires_at) return res.status(410).json({ error: 'This invitation has expired — please request a new one' });
+    res.json({ email: inv.email });
+  });
+
+  // ---------- Registration ----------
+  // First-ever account: open registration, becomes SuperAdmin automatically.
+  // All later accounts: require a valid, unused, unexpired invite token whose
+  // email matches the registering email.
   app.post('/api/register', async (req, res) => {
     try {
-      const { name, email, password } = req.body || {};
+      const { name, email, password, inviteToken } = req.body || {};
       if (!name || !email || !password) return res.status(400).json({ error: 'Name, email and password are required' });
       const pwError = validatePassword(password);
       if (pwError) return res.status(400).json({ error: pwError });
       const exists = db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()]);
       if (exists) return res.status(409).json({ error: 'An account with this email already exists' });
+
+      const firstRun = userCount() === 0;
+      let role = 'user';
+      let usedInvite = null;
+
+      if (firstRun) {
+        role = 'superadmin'; // bootstrap: the very first account administers the system
+      } else {
+        if (!inviteToken) return res.status(403).json({ error: 'Registration is by invitation only' });
+        const inv = db.get('SELECT * FROM invites WHERE token = ?', [inviteToken]);
+        if (!inv || inv.used) return res.status(403).json({ error: 'This invitation is invalid or has already been used' });
+        if (nowStamp() > inv.expires_at) return res.status(403).json({ error: 'This invitation has expired — please request a new one' });
+        if (inv.email.toLowerCase() !== email.toLowerCase()) return res.status(403).json({ error: 'This invitation was issued for a different email address' });
+        usedInvite = inv;
+      }
+
       const hash = bcrypt.hashSync(password, 10);
-      const info = db.run('INSERT INTO users (name, email, password_hash) VALUES (?, ?, ?)', [name.trim(), email.toLowerCase(), hash]);
-      const user = { id: info.lastInsertRowid, name: name.trim(), email: email.toLowerCase() };
+      const info = db.run('INSERT INTO users (name, email, password_hash, role) VALUES (?, ?, ?, ?)',
+        [name.trim(), email.toLowerCase(), hash, role]);
+      if (usedInvite) db.run('UPDATE invites SET used = 1 WHERE id = ?', [usedInvite.id]);
+
+      const user = { id: info.lastInsertRowid, name: name.trim(), email: email.toLowerCase(), role };
       const sent = await issueOtp(user);
       res.json({ pendingToken: pendingToken(user), email: user.email, devFallback: sent.fallback === true,
         message: 'Account created. Enter the 6-digit code sent to your email.' });
     } catch (e) { res.status(500).json({ error: 'Could not send verification email: ' + e.message }); }
   });
 
-  // ---------- Login step 1: check password, then require OTP ----------
+  // ---------- Login step 1: check password, status and maintenance, then require OTP ----------
   app.post('/api/login', async (req, res) => {
     try {
       const { email, password } = req.body || {};
       const user = db.get('SELECT * FROM users WHERE email = ?', [(email || '').toLowerCase()]);
       if (!user || !bcrypt.compareSync(password || '', user.password_hash)) {
         return res.status(401).json({ error: 'Incorrect email or password' });
+      }
+      if (user.status === 'disabled') {
+        return res.status(403).json({ error: 'Your account has been disabled. Please contact an administrator.' });
+      }
+      if (maintenanceOn() && user.role !== 'superadmin') {
+        return res.status(503).json({ error: 'MyTax Receipt Logger is currently under maintenance. Please try again later.' });
       }
       const sent = await issueOtp(user);
       res.json({ pendingToken: pendingToken(user), email: user.email, devFallback: sent.fallback === true,
@@ -148,8 +210,8 @@ initDb().then((db) => {
       return res.status(401).json({ error: 'Incorrect code — please try again' });
     }
     db.run('DELETE FROM otps WHERE user_id = ?', [payload.id]);
-    const row = db.get('SELECT must_change_password FROM users WHERE id = ?', [payload.id]);
-    const user = { id: payload.id, name: payload.name, email: payload.email };
+    const row = db.get('SELECT must_change_password, role, subscription FROM users WHERE id = ?', [payload.id]);
+    const user = { id: payload.id, name: payload.name, email: payload.email, role: (row && row.role) || 'user', subscription: (row && row.subscription) || 'freemium' };
     res.json({ token: fullToken(user), user, mustChangePassword: !!(row && row.must_change_password), message: 'Verified — welcome!' });
   });
 
@@ -196,6 +258,116 @@ initDb().then((db) => {
     }
     db.run('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [bcrypt.hashSync(newPassword, 10), req.user.id]);
     res.json({ message: 'Password updated' });
+  });
+
+  // ============================================================
+  // ADMIN API
+  // ============================================================
+
+  // ---------- List all users (UserAdmin + SuperAdmin) ----------
+  app.get('/api/admin/users', authMiddleware, requireAdmin, (req, res) => {
+    const users = db.all('SELECT id, name, email, role, subscription, status, created_at FROM users ORDER BY id');
+    res.json(users);
+  });
+
+  // ---------- Update a user: subscription/status (admins), role (SuperAdmin only) ----------
+  app.put('/api/admin/users/:id', authMiddleware, requireAdmin, (req, res) => {
+    const target = db.get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    const { role, subscription, status } = req.body || {};
+
+    // Guardrails
+    if (target.id === req.user.id && (status === 'disabled' || (role && role !== req.user.role))) {
+      return res.status(400).json({ error: 'You cannot disable or change the role of your own account' });
+    }
+    if (target.role === 'superadmin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Only a Super Administrator can modify a Super Administrator account' });
+    }
+    if (role !== undefined) {
+      if (req.user.role !== 'superadmin') return res.status(403).json({ error: 'Only a Super Administrator can change user roles' });
+      if (!['superadmin', 'useradmin', 'user'].includes(role)) return res.status(400).json({ error: 'Invalid role' });
+      if (target.role === 'superadmin' && role !== 'superadmin') {
+        const supers = db.get("SELECT COUNT(*) AS c FROM users WHERE role = 'superadmin'").c;
+        if (supers <= 1) return res.status(400).json({ error: 'Cannot demote the last Super Administrator' });
+      }
+    }
+    if (subscription !== undefined && !['freemium', 'premium'].includes(subscription)) return res.status(400).json({ error: 'Invalid subscription' });
+    if (status !== undefined && !['active', 'disabled'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+    db.run('UPDATE users SET role = ?, subscription = ?, status = ? WHERE id = ?', [
+      role !== undefined ? role : target.role,
+      subscription !== undefined ? subscription : target.subscription,
+      status !== undefined ? status : target.status,
+      target.id,
+    ]);
+    res.json({ message: 'User updated' });
+  });
+
+  // ---------- Delete a user and all their data ----------
+  app.delete('/api/admin/users/:id', authMiddleware, requireAdmin, (req, res) => {
+    const target = db.get('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+    if (target.id === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account from the admin panel' });
+    if (target.role === 'superadmin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({ error: 'Only a Super Administrator can delete a Super Administrator account' });
+    }
+    if (target.role === 'superadmin') {
+      const supers = db.get("SELECT COUNT(*) AS c FROM users WHERE role = 'superadmin'").c;
+      if (supers <= 1) return res.status(400).json({ error: 'Cannot delete the last Super Administrator' });
+    }
+    // Remove receipt files, receipts, OTPs, then the account
+    const receipts = db.all('SELECT * FROM receipts WHERE user_id = ?', [target.id]);
+    for (const r of receipts) {
+      const file = path.join(r.tier === 'hot' ? HOT_DIR : COLD_DIR, r.filename);
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+    }
+    db.run('DELETE FROM receipts WHERE user_id = ?', [target.id]);
+    db.run('DELETE FROM otps WHERE user_id = ?', [target.id]);
+    db.run('DELETE FROM users WHERE id = ?', [target.id]);
+    res.json({ message: `Account ${target.email} and ${receipts.length} receipt(s) deleted` });
+  });
+
+  // ---------- Invites: list, create (send email), revoke ----------
+  app.get('/api/admin/invites', authMiddleware, requireAdmin, (req, res) => {
+    const invites = db.all('SELECT id, email, invited_by, expires_at, used, created_at FROM invites ORDER BY id DESC');
+    res.json(invites);
+  });
+
+  app.post('/api/admin/invites', authMiddleware, requireAdmin, async (req, res) => {
+    const { email } = req.body || {};
+    if (!email || !/.+@.+\..+/.test(email)) return res.status(400).json({ error: 'A valid email address is required' });
+    const existsUser = db.get('SELECT id FROM users WHERE email = ?', [email.toLowerCase()]);
+    if (existsUser) return res.status(409).json({ error: 'An account with this email already exists' });
+    const token = crypto.randomBytes(24).toString('base64url');
+    db.run('INSERT INTO invites (email, token, invited_by, expires_at) VALUES (?, ?, ?, ?)',
+      [email.toLowerCase(), token, req.user.email, nowPlusMinutes(7 * 24 * 60)]); // 7 days
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'http';
+    const link = `${proto}://${req.get('host')}/?invite=${token}`;
+    try {
+      const sent = await sendInviteEmail(email.toLowerCase(), req.user.name, link);
+      res.json({ message: `Invitation sent to ${email.toLowerCase()}`, devFallback: sent.fallback === true, link: sent.fallback ? link : undefined });
+    } catch (e) { res.status(500).json({ error: 'Could not send invite email: ' + e.message }); }
+  });
+
+  app.delete('/api/admin/invites/:id', authMiddleware, requireAdmin, (req, res) => {
+    const inv = db.get('SELECT * FROM invites WHERE id = ?', [req.params.id]);
+    if (!inv) return res.status(404).json({ error: 'Invite not found' });
+    if (inv.used) return res.status(400).json({ error: 'This invite has already been used and cannot be revoked' });
+    db.run('DELETE FROM invites WHERE id = ?', [inv.id]);
+    res.json({ message: `Invitation for ${inv.email} revoked` });
+  });
+
+  // ---------- Maintenance mode (SuperAdmin only to change) ----------
+  app.get('/api/admin/maintenance', authMiddleware, requireAdmin, (req, res) => {
+    res.json({ maintenance: maintenanceOn() });
+  });
+
+  app.post('/api/admin/maintenance', authMiddleware, requireSuperAdmin, (req, res) => {
+    const { enabled } = req.body || {};
+    setSetting('maintenance_mode', enabled ? 'on' : 'off');
+    res.json({ maintenance: maintenanceOn(), message: enabled
+      ? 'Maintenance mode is ON — only Super Administrators can log in'
+      : 'Maintenance mode is OFF — all users can log in' });
   });
 
   // ---------- Receipts ----------
