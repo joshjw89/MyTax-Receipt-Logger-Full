@@ -1,12 +1,14 @@
-// mailer.js - sends emails via Brevo HTTP API (port 443 / HTTPS)
-// Render's free tier blocks all outbound SMTP ports (25, 465, 587) since September 26 2025. 
-// Brevo sends via a REST API over HTTPS (port 443) which Render permits. 
-// No additional npm package needed — uses Node's built-in https.
-// Environment variables required (set in Render dashboard, never in code):
-//   BREVO_API_KEY 
-//   EMAIL_USER     
+// mailer.js — sends emails via Brevo HTTP API (port 443 / HTTPS)
 //
-// Free tier: 300 emails/day
+// Replaced Nodemailer SMTP with Brevo
+// Render's free tier blocks all outbound SMTP ports (25, 465, 587) since
+// September 26 2025. Brevo sends via a REST API over HTTPS (port 443) which
+// Render permits. No additional npm package needed — uses Node's built-in https.
+//
+// Environment variables required (set in Render dashboard, never in code):
+//   BREVO_API_KEY  — your Brevo API key (starts with "xkeysib-")
+//   EMAIL_USER     — the Gmail address you verified as a sender in Brevo
+
 
 const https = require('https');
 
@@ -110,4 +112,35 @@ async function sendPasswordResetEmail(toEmail, name, tempPass) {
   return { delivered: true, fallback: false };
 }
 
-module.exports = { sendOtpEmail, sendPasswordResetEmail, isConfigured };
+// ---------- Invite email ----------
+async function sendInviteEmail(toEmail, inviterName, inviteLink) {
+  if (!isConfigured) {
+    console.log('============================================================');
+    console.log('  EMAIL NOT CONFIGURED — DEVELOPMENT FALLBACK');
+    console.log(`  Invite link for ${toEmail}: ${inviteLink}`);
+    console.log('  (Set BREVO_API_KEY and EMAIL_USER to send real emails)');
+    console.log('============================================================');
+    return { delivered: false, fallback: true };
+  }
+
+  await brevoSend({
+    sender: { name: 'MyTax Receipt Logger', email: EMAIL_USER },
+    to: [{ email: toEmail }],
+    subject: `${inviterName} invited you to MyTax Receipt Logger`,
+    textContent: `${inviterName} has invited you to join MyTax Receipt Logger. Create your account here (link valid for 7 days): ${inviteLink}`,
+    htmlContent: `
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;background:#F4F7F9;border-radius:12px">
+      <h2 style="color:#122B40;margin:0 0 4px">MyTax Receipt Logger</h2>
+      <p style="color:#5A6B7A;margin:0 0 20px">You're invited</p>
+      <div style="background:#fff;border-radius:10px;padding:24px;text-align:center;border:1px solid #e2e8f0">
+        <p style="color:#5A6B7A;margin:0 0 16px">${inviterName} has invited you to join MyTax Receipt Logger — keep every tax relief receipt safe for 7 years, as LHDN requires.</p>
+        <a href="${inviteLink}" style="display:inline-block;background:#122B40;color:#fff;text-decoration:none;padding:12px 28px;border-radius:8px;font-weight:bold">Create your account</a>
+        <p style="color:#94a3b8;font-size:13px;margin:16px 0 0">This invitation expires in 7 days.</p>
+      </div>
+      <p style="color:#94a3b8;font-size:12px;margin:20px 0 0">If you weren't expecting this invitation, you can safely ignore this email.</p>
+    </div>`,
+  });
+  return { delivered: true, fallback: false };
+}
+
+module.exports = { sendOtpEmail, sendPasswordResetEmail, sendInviteEmail, isConfigured };
