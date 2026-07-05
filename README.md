@@ -21,6 +21,11 @@ A web application that helps Malaysian individual taxpayers digitise, categorise
 - **Search & filter** - by merchant name, category, and date range
 - **Storage lifecycle simulation** - Hot → Cold tier movement modelled on Azure Blob Storage lifecycle management; configurable day threshold
 - **Annual summary report** - exportable to PDF via the browser print function
+- **Invite-only registration** - public self-registration is disabled; Super Administrators and User Administrators send invite links to specific email addresses (7-day expiry, single-use, cryptographically random token)
+- **Administrator roles** - three roles: Super Administrator (full access), User Administrator (user management only), User (normal access)
+- **Admin panel** - dedicated Administration tab for User Admins and Super Admins: view all users with role, subscription, status and created date; toggle Freemium/Premium subscription; disable/enable accounts; delete accounts and all associated receipts
+- **Role management** - Super Admins can promote or demote any user's role; last Super Administrator is protected from demotion or deletion
+- **Maintenance mode** - Super Admins can take the site offline instantly; all non-Super-Admin login attempts are blocked with a maintenance message; Super Admins continue to log in normally through the same URL
 
 ---
 
@@ -67,17 +72,3 @@ This is the **full-stack prototype**. A separate UI-only static build is also ma
 - **Render free tier sleeps** after ~15 minutes of inactivity. The first request after sleeping takes 30–50 seconds to wake. 
 - **Receipt files are not persisted across Render redeploys** - files in `storage/hot` and `storage/cold` are also on ephemeral disk.
 - **Emails may land in spam** - due to missing SPF/DKIM/DMARC DNS records on the sender domain. Expected for a prototype using a personal email address as the sender. In production, these records would be configured on the domain's DNS provider.
-
----
-
-## Upcoming features
-
-The following features have been built locally and are pending deployment:
-
-- **Invite-only registration** - public self-registration is disabled; Super Administrators and User Administrators send invite links to specific email addresses (7-day expiry, single-use, cryptographically random token)
-- **Administrator roles** - three roles: Super Administrator (full access), User Administrator (user management only), User (normal access)
-- **Admin panel** - dedicated Administration tab for User Admins and Super Admins: view all users with role, subscription, status and created date; toggle Freemium/Premium subscription; disable/enable accounts; delete accounts and all associated receipts
-- **Role management** - Super Admins can promote or demote any user's role; last Super Administrator is protected from demotion or deletion
-- **Maintenance mode** - Super Admins can take the site offline instantly; all non-Super-Admin login attempts are blocked with a maintenance message; Super Admins continue to log in normally through the same URL
-
-
