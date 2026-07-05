@@ -1,4 +1,4 @@
-// db.js — Local SQLite database via sql.js (pure JavaScript, no compilation needed)
+// db.js - Local SQLite database via sql.js (pure JavaScript, no compilation needed)
 // Stands in for Azure PostgreSQL Flexible Server from the Assignment 1 plan.
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +13,23 @@ CREATE TABLE IF NOT EXISTS users (
   email TEXT NOT NULL UNIQUE,
   password_hash TEXT NOT NULL,
   must_change_password INTEGER NOT NULL DEFAULT 0,
+  role TEXT NOT NULL DEFAULT 'user',            -- 'superadmin' | 'useradmin' | 'user'
+  subscription TEXT NOT NULL DEFAULT 'freemium',-- 'freemium' | 'premium'
+  status TEXT NOT NULL DEFAULT 'active',        -- 'active' | 'disabled'
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS invites (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL,
+  token TEXT NOT NULL UNIQUE,
+  invited_by TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  used INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS receipts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,6 +63,10 @@ async function initDb() {
 
   // Migration for databases created before v2.2: add the flag column if missing.
   try { db.run('ALTER TABLE users ADD COLUMN must_change_password INTEGER NOT NULL DEFAULT 0'); } catch (e) { /* column already exists */ }
+  // Migrations for databases created before v3.0: role/subscription/status columns.
+  try { db.run("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'"); } catch (e) { /* exists */ }
+  try { db.run("ALTER TABLE users ADD COLUMN subscription TEXT NOT NULL DEFAULT 'freemium'"); } catch (e) { /* exists */ }
+  try { db.run("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"); } catch (e) { /* exists */ }
 
   const persist = () => fs.writeFileSync(DB_PATH, Buffer.from(db.export()));
   persist();
