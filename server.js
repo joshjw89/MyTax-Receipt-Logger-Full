@@ -97,6 +97,21 @@ initDb().then((db) => {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
 
+  // Auto-promote the designated admin email to SuperAdmin on startup if no
+  // SuperAdmin exists yet. Handles Render's ephemeral disk inconsistency where
+  // the database may survive a restart with stale role data.
+  const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
+  if (ADMIN_EMAIL) {
+    const existingSuper = db.get("SELECT id FROM users WHERE role = 'superadmin'");
+    if (!existingSuper) {
+      const adminUser = db.get('SELECT * FROM users WHERE email = ?', [ADMIN_EMAIL.toLowerCase()]);
+      if (adminUser) {
+        db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [adminUser.id]);
+        console.log(`Auto-promoted ${ADMIN_EMAIL} to SuperAdmin on startup`);
+      }
+    }
+  }
+
   // Issue a fresh OTP for a user: replace any existing ones, store hashed, email it.
   async function issueOtp(user) {
     const code = sixDigit();
