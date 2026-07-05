@@ -427,6 +427,21 @@ initDb().then((db) => {
     res.sendFile(file);
   });
 
+  // ---------- TEMPORARY: list receipts with uploaded_at + backdate for demo ----------
+  // REMOVE AFTER USE
+  app.get('/api/temp-receipts', (req, res) => {
+    const rows = db.all('SELECT id, user_id, merchant, receipt_date, amount, tier, uploaded_at FROM receipts ORDER BY id');
+    res.json(rows);
+  });
+  app.post('/api/temp-backdate/:id', (req, res) => {
+    const { days } = req.body || {};
+    const r = db.get('SELECT * FROM receipts WHERE id = ?', [req.params.id]);
+    if (!r) return res.status(404).json({ error: 'Receipt not found' });
+    const newDate = new Date(Date.now() - (days || 31) * 86400000).toISOString().replace('T', ' ').slice(0, 19);
+    db.run('UPDATE receipts SET uploaded_at = ? WHERE id = ?', [newDate, r.id]);
+    res.json({ id: r.id, merchant: r.merchant, uploaded_at: newDate });
+  });
+  
   // ---------- Lifecycle policy (simulates Azure Blob Lifecycle Management) ----------
   app.post('/api/lifecycle/run', authMiddleware, (req, res) => {
     const days = Math.max(0, parseInt(req.body.days ?? 30, 10));
