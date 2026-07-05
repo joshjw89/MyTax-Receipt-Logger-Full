@@ -441,17 +441,6 @@ initDb().then((db) => {
     res.json({ moved, message: `Lifecycle policy complete — ${moved} receipt(s) moved from Hot to Cold tier` });
   });
 
-  // ---------- TEMPORARY: one-time SuperAdmin promotion ----------
-  // REMOVE THIS ENDPOINT after use — it is intentionally unprotected for recovery only
-  app.post('/api/temp-promote', (req, res) => {
-    const { email, secret } = req.body || {};
-    if (secret !== 'promote-me-now-delete-after') return res.status(403).json({ error: 'Wrong secret' });
-    const user = db.get('SELECT * FROM users WHERE email = ?', [(email || '').toLowerCase()]);
-    if (!user) return res.status(404).json({ error: 'User not found' });
-    db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [user.id]);
-    res.json({ message: `${user.email} is now SuperAdmin` });
-  });
-  
   // ---------- Annual summary ----------
   app.get('/api/summary', authMiddleware, (req, res) => {
     const year = req.query.year || new Date().getFullYear().toString();
