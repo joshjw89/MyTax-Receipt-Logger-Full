@@ -3,6 +3,17 @@
 // Local folders storage/hot and storage/cold (replace Azure Blob Storage tiers)
 // Login/registration require a 6-digit OTP emailed to the user (Brevo)
 
+// ---------- TEMPORARY: one-time SuperAdmin promotion ----------
+  // REMOVE THIS ENDPOINT after use — it is intentionally unprotected for recovery only
+  app.post('/api/temp-promote', (req, res) => {
+    const { email, secret } = req.body || {};
+    if (secret !== 'promote-me-now-delete-after') return res.status(403).json({ error: 'Wrong secret' });
+    const user = db.get('SELECT * FROM users WHERE email = ?', [(email || '').toLowerCase()]);
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [user.id]);
+    res.json({ message: `${user.email} is now SuperAdmin` });
+  });
+
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
