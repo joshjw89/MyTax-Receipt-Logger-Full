@@ -78,6 +78,32 @@ function AuthPage({ onLogin, notify }) {
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
+  // Invite-only registration state
+  const [invite, setInvite] = useState(null);       // { token, email } when a valid invite link is used
+  const [firstRun, setFirstRun] = useState(false);  // true only when zero accounts exist (bootstrap)
+  const [maintenance, setMaintenance] = useState(false);
+
+  useEffect(() => {
+    // Check first-run + maintenance status, and validate any ?invite= token in the URL
+    api('/api/setup-status').then((s) => {
+      setFirstRun(s.firstRun);
+      setMaintenance(s.maintenance);
+    }).catch(() => {});
+    const token = new URLSearchParams(window.location.search).get('invite');
+    if (token) {
+      api('/api/invite/' + token)
+        .then((data) => {
+          setInvite({ token, email: data.email });
+          setMode('register');
+          setForm((f) => ({ ...f, email: data.email }));
+          notify('Invitation verified — create your account');
+        })
+        .catch((e) => notify(e.message, 'error'));
+    }
+  }, []);
+
+  const canRegister = firstRun || !!invite; // registration hidden unless bootstrapping or invited
+
   // Two-factor step state
   const [stage, setStage] = useState('credentials'); // 'credentials' | 'otp' | 'forgot' | 'changepw'
   const [pending, setPending] = useState(null);       // { pendingToken, email, devFallback }
@@ -102,7 +128,8 @@ function AuthPage({ onLogin, notify }) {
     if (mode === 'register' && !pwOk) { notify('Password does not meet the requirements yet', 'error'); return; }
     setBusy(true);
     try {
-      const data = await api(mode === 'login' ? '/api/login' : '/api/register', { method: 'POST', body: form });
+      const body = mode === 'register' && invite ? { ...form, inviteToken: invite.token } : form;
+      const data = await api(mode === 'login' ? '/api/login' : '/api/register', { method: 'POST', body });
       setPending(data);
       setStage('otp');
       setCode('');
@@ -179,18 +206,38 @@ function AuthPage({ onLogin, notify }) {
 
         {stage === 'credentials' && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8">
-            <div className="flex rounded-lg bg-slate-100 p-1 mb-6">
-              {['login', 'register'].map((m) => (
-                <button key={m} onClick={() => setMode(m)}
-                  className={`flex-1 py-2 rounded-md text-sm font-medium capitalize ${mode === m ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}>
-                  {m === 'login' ? 'Log in' : 'Create account'}
-                </button>
-              ))}
-            </div>
+            {maintenance && (
+              <p className="text-xs bg-amber-50 text-amber-700 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                The site is currently under maintenance. Only administrators can log in.
+              </p>
+            )}
+            {firstRun && (
+              <p className="text-xs bg-sky-50 text-sky-700 border border-sky-200 rounded-lg px-3 py-2 mb-4">
+                First-time setup: the first account created becomes the Super Administrator.
+              </p>
+            )}
+            {canRegister ? (
+              <div className="flex rounded-lg bg-slate-100 p-1 mb-6">
+                {['login', 'register'].map((m) => (
+                  <button key={m} onClick={() => setMode(m)}
+                    className={`flex-1 py-2 rounded-md text-sm font-medium capitalize ${mode === m ? 'bg-white shadow text-slate-900' : 'text-slate-500'}`}>
+                    {m === 'login' ? 'Log in' : 'Create account'}
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <h2 className="text-lg font-bold ink mb-5 text-center">Log in</h2>
+            )}
             {mode === 'register' && (
               <Field label="Full name"><input className={inputCls} value={form.name} onChange={set('name')} placeholder="e.g. Joshua Tan" /></Field>
             )}
-            <Field label="Email"><input className={inputCls} type="email" value={form.email} onChange={set('email')} placeholder="you@email.com" /></Field>
+            <Field label="Email">
+              <input className={inputCls + (invite && mode === 'register' ? ' bg-slate-50 text-slate-500' : '')} type="email" value={form.email} onChange={set('email')}
+                placeholder="you@email.com" readOnly={!!(invite && mode === 'register')} />
+            </Field>
+            {invite && mode === 'register' && (
+              <p className="text-xs text-slate-400 -mt-2 mb-4">This invitation was issued for this email address.</p>
+            )}
             <Field label="Password"><input className={inputCls} type="password" value={form.password} onChange={set('password')} placeholder={mode === 'register' ? 'Min 10 chars, 1 uppercase, 1 special' : 'Your password'} onKeyDown={(e) => e.key === 'Enter' && submit()} /></Field>
             {mode === 'register' && form.password.length > 0 && (
               <div className="mb-4 -mt-2 space-y-1">
@@ -211,7 +258,7 @@ function AuthPage({ onLogin, notify }) {
                 Forgot password?
               </button>
             )}
-            <p className="text-center text-xs text-slate-400 mt-4">Protected by two-factor authentication - a one-time code is emailed to you.</p>
+            <p className="text-center text-xs text-slate-400 mt-4">Protected by two-factor authentication. A one-time code will be emailed to you.</p>
           </div>
         )}
 
@@ -295,7 +342,7 @@ function AuthPage({ onLogin, notify }) {
           </div>
         )}
 
-        <p className="text-center text-xs text-slate-400 mt-6">Full-stack prototype — Node.js server with email OTP.</p>
+        <p className="text-center text-xs text-slate-400 mt-6">By logging into this system, you acknowledge that you are an authorized user and that you agree to be bound by our Terms of Use and Privacy Policy. Unauthorized access or use of this platform is strictly prohibited and may result in civil or criminal penalties. By continuing, you consent to the monitoring and logging of your system activities.</p>
       </div>
     </div>
   );
@@ -496,7 +543,7 @@ function ReceiptsPage({ token, notify }) {
             <th className="px-4 py-3 font-medium">Tier</th><th className="px-4 py-3 font-medium">OCR</th><th className="px-4 py-3"></th>
           </tr></thead>
           <tbody>
-            {rows.length === 0 && <tr><td colSpan="7" className="px-4 py-10 text-center text-slate-400">No receipts yet — upload your first one to get started.</td></tr>}
+            {rows.length === 0 && <tr><td colSpan="7" className="px-4 py-10 text-center text-slate-400">No receipts yet. Upload your first one to get started.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50">
                 <td className="px-4 py-3 whitespace-nowrap">{r.receipt_date}</td>
@@ -653,6 +700,208 @@ function LifecyclePage({ token, notify }) {
   );
 }
 
+// ---------- Admin page (User Admin + Super Admin) ----------
+function AdminPage({ token, user, notify }) {
+  const [users, setUsers] = useState([]);
+  const [invites, setInvites] = useState([]);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [busy, setBusy] = useState(false);
+  const isSuper = user.role === 'superadmin';
+
+  async function load() {
+    try {
+      setUsers(await api('/api/admin/users', { token }));
+      setInvites(await api('/api/admin/invites', { token }));
+    } catch (e) { notify(e.message, 'error'); }
+  }
+  useEffect(() => { load(); }, []);
+
+  async function updateUser(id, changes, confirmMsg) {
+    if (confirmMsg && !confirm(confirmMsg)) return;
+    try {
+      await api('/api/admin/users/' + id, { method: 'PUT', token, body: changes });
+      notify('User updated'); load();
+    } catch (e) { notify(e.message, 'error'); }
+  }
+  async function deleteUser(u) {
+    if (!confirm(`Permanently delete ${u.email} and ALL their receipts? This cannot be undone.`)) return;
+    try {
+      const r = await api('/api/admin/users/' + u.id, { method: 'DELETE', token });
+      notify(r.message); load();
+    } catch (e) { notify(e.message, 'error'); }
+  }
+  async function sendInvite() {
+    if (!inviteEmail.trim()) { notify('Enter an email address to invite', 'error'); return; }
+    setBusy(true);
+    try {
+      const r = await api('/api/admin/invites', { method: 'POST', token, body: { email: inviteEmail.trim() } });
+      notify(r.devFallback ? 'Email not configured — invite link printed in the server window' : r.message);
+      setInviteEmail(''); load();
+    } catch (e) { notify(e.message, 'error'); }
+    setBusy(false);
+  }
+  async function revokeInvite(inv) {
+    if (!confirm(`Revoke the pending invitation for ${inv.email}?`)) return;
+    try {
+      const r = await api('/api/admin/invites/' + inv.id, { method: 'DELETE', token });
+      notify(r.message); load();
+    } catch (e) { notify(e.message, 'error'); }
+  }
+
+  const roleBadge = (r) => r === 'superadmin' ? 'bg-purple-100 text-purple-700' : r === 'useradmin' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600';
+  const roleLabel = (r) => r === 'superadmin' ? 'Super Admin' : r === 'useradmin' ? 'User Admin' : 'User';
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold ink mb-1">User administration</h2>
+      <p className="text-slate-500 text-sm mb-6">Manage accounts, subscriptions and invitations</p>
+
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto mb-8">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-slate-500 border-b border-slate-100">
+            <th className="px-4 py-3 font-medium">User</th>
+            <th className="px-4 py-3 font-medium">Role</th>
+            <th className="px-4 py-3 font-medium">Subscription</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3 font-medium">Created</th>
+            <th className="px-4 py-3"></th>
+          </tr></thead>
+          <tbody>
+            {users.map((u) => (
+              <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50">
+                <td className="px-4 py-3">{u.name}{u.id === user.id && <span className="text-xs text-slate-400"> (you)</span>}
+                  <div className="text-xs text-slate-400">{u.email}</div></td>
+                <td className="px-4 py-3">
+                  {isSuper && u.id !== user.id ? (
+                    <select className="border border-slate-200 rounded px-1.5 py-1 text-xs bg-white" value={u.role}
+                      onChange={(e) => updateUser(u.id, { role: e.target.value }, `Change ${u.email} to ${e.target.value}?`)}>
+                      <option value="user">User</option>
+                      <option value="useradmin">User Admin</option>
+                      <option value="superadmin">Super Admin</option>
+                    </select>
+                  ) : (
+                    <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${roleBadge(u.role)}`}>{roleLabel(u.role)}</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
+                  <button onClick={() => updateUser(u.id, { subscription: u.subscription === 'premium' ? 'freemium' : 'premium' })}
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.subscription === 'premium' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'}`}
+                    title="Click to toggle">
+                    {u.subscription === 'premium' ? 'Premium' : 'Freemium'}
+                  </button>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${u.status === 'active' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'}`}>
+                    {u.status === 'active' ? 'Active' : 'Disabled'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{(u.created_at || '').slice(0, 10)}</td>
+                <td className="px-4 py-3 whitespace-nowrap text-right">
+                  {u.id !== user.id && (
+                    <span>
+                      <button onClick={() => updateUser(u.id, { status: u.status === 'active' ? 'disabled' : 'active' },
+                        u.status === 'active' ? `Disable ${u.email}? They will no longer be able to log in.` : null)}
+                        className="text-slate-500 hover:text-slate-900 mr-3">
+                        {u.status === 'active' ? 'Disable' : 'Enable'}
+                      </button>
+                      <button onClick={() => deleteUser(u)} className="text-red-400 hover:text-red-600">Delete</button>
+                    </span>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="font-semibold ink mb-3">Invitations</h3>
+      <div className="bg-white border border-slate-200 rounded-2xl p-5 mb-4">
+        <div className="flex gap-3">
+          <input className={inputCls + ' flex-1'} type="email" placeholder="new.user@email.com" value={inviteEmail}
+            onChange={(e) => setInviteEmail(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && sendInvite()} />
+          <button onClick={sendInvite} disabled={busy}
+            className="bg-ink text-white rounded-lg px-5 py-2 text-sm font-medium disabled:opacity-50 whitespace-nowrap">
+            {busy ? 'Sending…' : 'Send invitation'}
+          </button>
+        </div>
+        <p className="text-xs text-slate-400 mt-2">Registration is by invitation only. The invite link is valid for 7 days and can be used once.</p>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-2xl overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-slate-500 border-b border-slate-100">
+            <th className="px-4 py-3 font-medium">Email</th>
+            <th className="px-4 py-3 font-medium">Invited by</th>
+            <th className="px-4 py-3 font-medium">Expires</th>
+            <th className="px-4 py-3 font-medium">Status</th>
+            <th className="px-4 py-3"></th>
+          </tr></thead>
+          <tbody>
+            {invites.length === 0 && <tr><td colSpan="5" className="px-4 py-8 text-center text-slate-400">No invitations sent yet.</td></tr>}
+            {invites.map((inv) => (
+              <tr key={inv.id} className="border-b border-slate-50">
+                <td className="px-4 py-3">{inv.email}</td>
+                <td className="px-4 py-3 text-slate-500">{inv.invited_by}</td>
+                <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{(inv.expires_at || '').slice(0, 10)}</td>
+                <td className="px-4 py-3">
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${inv.used ? 'bg-emerald-100 text-emerald-700' : 'bg-sky-100 text-sky-700'}`}>
+                    {inv.used ? 'Used' : 'Pending'}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-right">
+                  {!inv.used && <button onClick={() => revokeInvite(inv)} className="text-red-400 hover:text-red-600">Revoke</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Maintenance page (Super Admin only) ----------
+function MaintenancePage({ token, notify }) {
+  const [on, setOn] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api('/api/admin/maintenance', { token }).then((d) => setOn(d.maintenance)).catch(() => {}); }, []);
+
+  async function toggle() {
+    const target = !on;
+    const msg = target
+      ? 'Turn ON maintenance mode? All users except Super Administrators will be unable to log in until it is turned off.'
+      : 'Turn OFF maintenance mode? All users will be able to log in again.';
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      const r = await api('/api/admin/maintenance', { method: 'POST', token, body: { enabled: target } });
+      setOn(r.maintenance); notify(r.message);
+    } catch (e) { notify(e.message, 'error'); }
+    setBusy(false);
+  }
+
+  return (
+    <div>
+      <h2 className="text-2xl font-bold ink mb-1">Maintenance mode</h2>
+      <p className="text-slate-500 text-sm mb-6">Take the site offline for all users in case of a security incident or planned maintenance. Super Administrators can still log in.</p>
+      <div className={`rounded-2xl border p-8 max-w-xl ${on ? 'bg-red-50 border-red-200' : 'bg-white border-slate-200'}`}>
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-semibold ink text-lg">{on ? 'Maintenance mode is ON' : 'Maintenance mode is OFF'}</p>
+            <p className="text-sm text-slate-500 mt-1">
+              {on ? 'Regular users and User Admins are blocked from logging in.' : 'The site is operating normally — all users can log in.'}
+            </p>
+          </div>
+          <button onClick={toggle} disabled={busy}
+            className={`rounded-lg px-6 py-2.5 font-medium text-white disabled:opacity-50 ${on ? 'bg-emerald-600' : 'bg-red-600'}`}>
+            {busy ? 'Working…' : on ? 'Turn OFF' : 'Turn ON'}
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-slate-400 mt-4 max-w-xl">Existing sessions are not force-terminated in this prototype; maintenance mode blocks new logins. In production this would also invalidate active sessions.</p>
+    </div>
+  );
+}
+
 // ---------- App shell ----------
 const NAV = [
   { id: 'dashboard', label: 'Dashboard' },
@@ -660,7 +909,10 @@ const NAV = [
   { id: 'receipts', label: 'My receipts' },
   { id: 'summary', label: 'Annual summary' },
   { id: 'lifecycle', label: 'Storage lifecycle' },
+  { id: 'admin', label: 'Administration', roles: ['useradmin', 'superadmin'] },
+  { id: 'maintenance', label: 'Maintenance', roles: ['superadmin'] },
 ];
+const navFor = (role) => NAV.filter((n) => !n.roles || n.roles.includes(role || 'user'));
 
 function App() {
   const [session, setSession] = useState(() => {
@@ -696,7 +948,7 @@ function App() {
           <p className="text-xs opacity-50 mt-1">Prototype</p>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
-          {NAV.map((n) => (
+          {navFor(user.role).map((n) => (
             <button key={n.id} onClick={() => setPage(n.id)}
               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm ${page === n.id ? 'bg-white/15 font-medium' : 'opacity-70 hover:opacity-100 hover:bg-white/5'}`}>
               {n.label}
@@ -705,12 +957,15 @@ function App() {
         </nav>
         <div className="px-5 py-4 border-t border-white/10">
           <p className="text-sm font-medium">{user.name}</p>
+          {user.role && user.role !== 'user' && (
+            <p className="text-xs" style={{ color: '#E8C766' }}>{user.role === 'superadmin' ? 'Super Administrator' : 'User Administrator'}</p>
+          )}
           <button onClick={logout} className="text-xs opacity-60 hover:opacity-100 mt-1">Log out</button>
         </div>
       </aside>
       <main className="flex-1 px-6 py-8 max-w-5xl mx-auto w-full">
         <div className="md:hidden flex gap-2 mb-6 overflow-x-auto">
-          {NAV.map((n) => (
+          {navFor(user.role).map((n) => (
             <button key={n.id} onClick={() => setPage(n.id)}
               className={`px-3 py-1.5 rounded-full text-xs whitespace-nowrap ${page === n.id ? 'bg-ink text-white' : 'bg-white border border-slate-200 text-slate-600'}`}>
               {n.label}</button>
@@ -721,6 +976,8 @@ function App() {
         {page === 'receipts' && <ReceiptsPage token={token} notify={notify} />}
         {page === 'summary' && <SummaryPage token={token} user={user} />}
         {page === 'lifecycle' && <LifecyclePage token={token} notify={notify} />}
+        {page === 'admin' && <AdminPage token={token} user={user} notify={notify} />}
+        {page === 'maintenance' && <MaintenancePage token={token} notify={notify} />}
       </main>
       <Toast toast={toast} />
     </div>
