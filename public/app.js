@@ -342,7 +342,7 @@ function AuthPage({ onLogin, notify }) {
           </div>
         )}
 
-        <p className="text-center text-xs text-slate-400 mt-6">By logging into this system, you acknowledge that you are an authorized user and that you agree to be bound by our Terms of Use and Privacy Policy. Unauthorized access or use of this platform is strictly prohibited and may result in civil or criminal penalties. By continuing, you consent to the monitoring and logging of your system activities.</p>
+        <p className="text-center text-xs text-slate-400 mt-6">By logging into this system, you acknowledge that you are an authorized user and that you agree to be bound by our Terms of Use and Privacy Policy.</p>
       </div>
     </div>
   );
