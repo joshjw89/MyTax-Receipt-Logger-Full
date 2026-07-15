@@ -106,22 +106,25 @@ initDb().then((db) => {
   // overwritten so users can change their password freely after first login.
   // -----------------------------------------------------------------------
   const SEED_ADMINS = [
-    { name: 'Hilman Zaki', email: 'mc260139819@student.unitar.my', password: process.env.ADMIN2_PASS || 'Admin@12345!' },
+    { name: 'Joshua William', email: 'josh_jw89@live.com',            password: null },
+    { name: 'Hilman Zaki',    email: 'mc260139819@student.unitar.my', password: process.env.ADMIN2_PASS || 'Admin@12345!' },
   ];
 
   for (const seed of SEED_ADMINS) {
     const existing = db.get('SELECT * FROM users WHERE email = ?', [seed.email.toLowerCase()]);
-    if (!existing) {
+    if (!existing && seed.password) {
+      // Create account only if a default password is provided (Hilman's seed)
       const hash = bcrypt.hashSync(seed.password, 10);
       db.run(
         "INSERT INTO users (name, email, password_hash, role, subscription, status) VALUES (?, ?, ?, 'superadmin', 'freemium', 'active')",
         [seed.name, seed.email.toLowerCase(), hash]
       );
       console.log('Seeded SuperAdmin account: ' + seed.email);
-    } else if (existing.role !== 'superadmin') {
+    } else if (existing && existing.role !== 'superadmin') {
+      // Restore SuperAdmin role if it was lost — never touch the password
       db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [existing.id]);
       console.log('Restored SuperAdmin role for: ' + seed.email);
-    } else {
+    } else if (existing) {
       console.log('SuperAdmin OK: ' + seed.email);
     }
   }
