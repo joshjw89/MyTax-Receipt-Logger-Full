@@ -97,19 +97,32 @@ initDb().then((db) => {
   app.use(express.json());
   app.use(express.static(path.join(__dirname, 'public')));
 
-  // Auto-promote the designated admin email to SuperAdmin on startup if no
-  // SuperAdmin exists yet. Handles Render's ephemeral disk inconsistency where
-  // the database may survive a restart with stale role data.
-// Auto-promote all emails listed in ADMIN_EMAIL (comma-separated) to SuperAdmin
-  const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
-  if (ADMIN_EMAIL) {
-    const adminEmails = ADMIN_EMAIL.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
-    for (const email of adminEmails) {
-      const adminUser = db.get('SELECT * FROM users WHERE email = ?', [email]);
-      if (adminUser && adminUser.role !== 'superadmin') {
-        db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [adminUser.id]);
-        console.log(`Auto-promoted ${email} to SuperAdmin on startup`);
-      }
+  // -----------------------------------------------------------------------
+  // HARDCODED SUPERADMIN SEED
+  // On every startup, ensure both SuperAdmin accounts exist with the correct
+  // role. If an account is missing it is created automatically. If it exists
+  // but lost its role (ephemeral disk quirk) the role is restored.
+  // Passwords for new accounts are set here; existing passwords are never
+  // overwritten so users can change their password freely after first login.
+  // -----------------------------------------------------------------------
+  const SEED_ADMINS = [
+    { name: 'Hilman Zaki', email: 'mc260139819@student.unitar.my', password: process.env.ADMIN2_PASS || 'Admin@12345!' },
+  ];
+
+  for (const seed of SEED_ADMINS) {
+    const existing = db.get('SELECT * FROM users WHERE email = ?', [seed.email.toLowerCase()]);
+    if (!existing) {
+      const hash = bcrypt.hashSync(seed.password, 10);
+      db.run(
+        "INSERT INTO users (name, email, password_hash, role, subscription, status) VALUES (?, ?, ?, 'superadmin', 'freemium', 'active')",
+        [seed.name, seed.email.toLowerCase(), hash]
+      );
+      console.log('Seeded SuperAdmin account: ' + seed.email);
+    } else if (existing.role !== 'superadmin') {
+      db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [existing.id]);
+      console.log('Restored SuperAdmin role for: ' + seed.email);
+    } else {
+      console.log('SuperAdmin OK: ' + seed.email);
     }
   }
 
