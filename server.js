@@ -100,14 +100,15 @@ initDb().then((db) => {
   // Auto-promote the designated admin email to SuperAdmin on startup if no
   // SuperAdmin exists yet. Handles Render's ephemeral disk inconsistency where
   // the database may survive a restart with stale role data.
+// Auto-promote all emails listed in ADMIN_EMAIL (comma-separated) to SuperAdmin
   const ADMIN_EMAIL = process.env.ADMIN_EMAIL || '';
   if (ADMIN_EMAIL) {
-    const existingSuper = db.get("SELECT id FROM users WHERE role = 'superadmin'");
-    if (!existingSuper) {
-      const adminUser = db.get('SELECT * FROM users WHERE email = ?', [ADMIN_EMAIL.toLowerCase()]);
-      if (adminUser) {
+    const adminEmails = ADMIN_EMAIL.split(',').map(e => e.trim().toLowerCase()).filter(Boolean);
+    for (const email of adminEmails) {
+      const adminUser = db.get('SELECT * FROM users WHERE email = ?', [email]);
+      if (adminUser && adminUser.role !== 'superadmin') {
         db.run("UPDATE users SET role = 'superadmin' WHERE id = ?", [adminUser.id]);
-        console.log(`Auto-promoted ${ADMIN_EMAIL} to SuperAdmin on startup`);
+        console.log(`Auto-promoted ${email} to SuperAdmin on startup`);
       }
     }
   }
